@@ -39,10 +39,10 @@ type MonitorPing struct {
 }
 
 var (
-	URLRegex 	   = regexp.MustCompile("")
-	BTCPubkeyRegex = regexp.MustCompile("")
-	ETHPubkeyRegex = regexp.MustCompile("")
-	SOLPubkeyRegex = regexp.MustCompile("")
+	URLRegex 	   = regexp.MustCompile(`https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&\/=]*)`)
+	BTCPubkeyRegex = regexp.MustCompile(``)
+	ETHPubkeyRegex = regexp.MustCompile(`^0x[a-fA-F0-9]{40}$`)
+	SOLPubkeyRegex = regexp.MustCompile(`[1-9A-HJ-NP-Za-km-z]{32,44}`)
 )
 
 func New(pingChan chan MonitorPing) *Handler {
