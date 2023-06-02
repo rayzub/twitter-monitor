@@ -1,1 +1,1 @@
-FROM alpine:go
+FROM go:1.19
