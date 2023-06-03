@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/joho/godotenv"
 	"github.com/rayzub/twitter-monitor/src/core"
@@ -12,22 +14,21 @@ import (
 
 // @todo: add logging!
 func main() {
+	sc := make(chan os.Signal, 1)
 	isDev := flag.Bool("dev", false, "run monitor with dev environment values")
 	flag.Parse()
 
 
 	if err := LoadAndValidateEnv(*isDev); err != nil {
-		return
-	}
-
-
-	ctx := context.Background()
-	core := core.New(ctx)
-	if err := core.BotClient.OpenGateway(ctx); err != nil {
 		panic(err)
 	}
+	ctx := context.Background()
+	if err := core.New(ctx); err != nil {
+		panic(err)
+	}
+	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
+	<-sc
 }	
-
 
 func LoadAndValidateEnv(isDev bool) error {
 	requiredEnvs := []string{"CSRF_TOKEN", "BEARER_TOKEN", "AUTH_TOKEN", "WEBHOOK", "BOT_TOKEN", "REQUEST_CHANNEL_ID"}

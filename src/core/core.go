@@ -3,12 +3,12 @@ package core
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
+	"github.com/gtuk/discordwebhook"
 	"github.com/bwmarrin/discordgo"
-	"github.com/disgoorg/disgo"
-	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/webhook"
 	"github.com/rayzub/twitter-monitor/src/twitter"
 	"golang.org/x/exp/slices"
@@ -18,27 +18,26 @@ type Handler struct {
 	Context 			context.Context
 	Monitor 			*twitter.Handler
 	WHookClient 		webhook.Client
-	BotClient  		 	bot.Client
+	BotClient  		 	*discordgo.Session
 	PingChan    		chan twitter.MonitorPing
 
 	RequestChannelId 	string
 }
 
 
-func New(ctx context.Context) *Handler {
+func New(ctx context.Context) error {
 	pingChan := make(chan twitter.MonitorPing)
 	monitor := twitter.New(pingChan)
-
 	wClient, err := webhook.NewWithURL(os.Getenv("WEBHOOK"))
 
 	if err != nil {
-		return nil
+		return fmt.Errorf("error creating webhook: %s", err.Error())
 	}
 
-	bClient, err := disgo.New(os.Getenv("BOT_TOKEN"))
+	bClient, err := discordgo.New(fmt.Sprintf("Bot %s", os.Getenv("BOT_TOKEN")))
 
 	if err != nil {
-		return nil
+		return fmt.Errorf("error creating bot client: %s", err.Error())
 	}
 
 	handler := &Handler{
@@ -50,6 +49,12 @@ func New(ctx context.Context) *Handler {
 		RequestChannelId:   os.Getenv("REQUEST_CHANNEL_ID"),
 	}
 
+	handler.BotClient.AddHandler(handler.HandleCommands)
+	handler.BotClient.Identify.Intents = discordgo.IntentsGuildMessages
+	if err := handler.BotClient.Open(); err != nil {
+		return fmt.Errorf("error opening bot websocket: %s", err.Error())
+	}
+	log.Printf("Bot %s currently online. Press CTRL-C to exit.", handler.BotClient.State.User.Username)
 
 	go func() {
 		for {
@@ -65,10 +70,36 @@ func New(ctx context.Context) *Handler {
 		}
 	}()
 
-	
-	return handler
+
+	return nil
 }
 func (h *Handler) SendWebhook(ping twitter.MonitorPing) error {
+	username := "PRINT Twitter Monitor"
+	twitterURL := fmt.Sprintf("https://twitter.com/%s", ping.Handle)
+	fieldTitle := "Detected Tweet"
+	message := discordwebhook.Message{
+		Username: &username,
+		Embeds: &[]discordwebhook.Embed{
+			{
+				Title:  nil,
+				Url:   	&ping.URL,
+				Author: &discordwebhook.Author{
+					Name: &ping.Handle,
+					IconUrl: &ping.Image,
+					Url:  &twitterURL,
+				},
+				Fields: &[]discordwebhook.Field{
+					{
+						Name:  &fieldTitle,
+						Value: &ping.Message,
+					},
+				},
+			},
+		},
+	}
+	if err := discordwebhook.SendMessage(os.Getenv("WEBHOOK"), message); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -86,18 +117,20 @@ func (h *Handler) HandleCommands(discord *discordgo.Session, message *discordgo.
 
 	switch command {
 	case ".add":
-		if len(messageParts) > 1 {
+		if len(messageParts) < 2 {
 			return
 		}
-
 		twitterHandle := strings.ToLower(messageParts[1])
 		if err := h.addTwitterAccount(twitterHandle); err != nil {
+			log.Println(err.Error())
 			return
 		}
 
+		log.Printf("Added %s to monitor list.", twitterHandle)
+		h.BotClient.ChannelMessageSend(message.ChannelID, fmt.Sprintf("Added %s to monitor list.", twitterHandle))
 		return
 	case ".remove":
-		if len(messageParts) > 1 {
+		if len(messageParts) < 2 {
 			return
 		}
 
@@ -106,6 +139,8 @@ func (h *Handler) HandleCommands(discord *discordgo.Session, message *discordgo.
 			return
 		}
 
+		log.Printf("Removed %s from monitor list.", twitterHandle)
+		h.BotClient.ChannelMessageSend(message.ChannelID, fmt.Sprintf("Removed %s from monitor list.", twitterHandle))
 		return
 	case ".list":	
 		return			
@@ -121,16 +156,22 @@ func (h *Handler) addTwitterAccount(handle string) error {
 	}
 
 	ctx, cancel := context.WithCancel(h.Context)
-	syncChan := make(chan int)
-	go twitter.MonitorTweets(h.Monitor, ctx, twitter.MonitorFilter{
-		PositiveKeywords: []string{},
-		NegativeKeywords: []string{},
-		TwitterId: accountId,
-		LatestTweetTS: time.Now().Unix(),
-	})
-	<-syncChan
+	go func(){
+		for {
+			select {
+			case <-ctx.Done():
+				return
 
-
+			default:
+				twitter.MonitorTweets(h.Monitor, twitter.MonitorFilter{
+					PositiveKeywords: []string{},
+					NegativeKeywords: []string{},
+					TwitterId: accountId,
+					LatestTweetTS: time.Now().Unix(),
+				})
+			}
+		}
+	}()
 	h.Monitor.CurrentMonitored = append(h.Monitor.CurrentMonitored, accountId)
 	h.Monitor.MonitorKillMap[accountId] = cancel
 	return nil

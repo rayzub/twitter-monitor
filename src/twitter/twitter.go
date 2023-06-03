@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"time"
 )
 
 type Handler struct {
@@ -32,6 +33,7 @@ type MonitorFilter struct {
 
 type MonitorPing struct {
 	Handle     string
+	Title 	   string
 	Message    string
 	Image      string
 	URL        string
@@ -59,7 +61,7 @@ func New(pingChan chan MonitorPing) *Handler {
 
 func (m *Handler) FetchTwitterID(twitterHandle string) int64 {
 
-	req, err := http.NewRequest("GET", "https://twitter.com/i/api/graphql/ptQPCD7NrFS_TW71Lq07nw/UserByScreenName?variables=%7B%22screen_name%22%3A%22"+twitterHandle+"22%2C%22withSafetyModeUserFields%22%3Atrue%2C%22withSuperFollowsUserFields%22%3Atrue%7D&features=%7B%22responsive_web_twitter_blue_verified_badge_is_enabled%22%3Atrue%2C%22verified_phone_label_enabled%22%3Afalse%2C%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%7D", nil)
+	req, err := http.NewRequest("GET", "https://twitter.com/i/api/graphql/ptQPCD7NrFS_TW71Lq07nw/UserByScreenName?variables=%7B%22screen_name%22%3A%22"+twitterHandle+"%22%2C%22withSafetyModeUserFields%22%3Atrue%2C%22withSuperFollowsUserFields%22%3Atrue%7D&features=%7B%22responsive_web_twitter_blue_verified_badge_is_enabled%22%3Atrue%2C%22verified_phone_label_enabled%22%3Afalse%2C%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%7D", nil)
 
 	if err != nil {
 		return 0
@@ -106,7 +108,7 @@ func ParseExtras(text string) []string {
 	return []string{}
 }
 
-func MonitorTweets(m *Handler, ctx context.Context, filter MonitorFilter) {
+func MonitorTweets(m *Handler, filter MonitorFilter) {
 	req, _ := http.NewRequest("GET", fmt.Sprintf("https://api.twitter.com/1.1/statuses/user_timeline.json?count=5&include_rts=0&user_id=%d&tweet_mode=extended", filter.TwitterId), nil)
 	req.Header = http.Header{
 		"sec-ch-ua":                 {`"Chromium";v="112", "Google Chrome";v="112", "Not:A-Brand";v="99"'`},
@@ -136,22 +138,28 @@ func MonitorTweets(m *Handler, ctx context.Context, filter MonitorFilter) {
 	bBytes, _ := io.ReadAll(res.Body)
 	defer res.Body.Close()
 
+
 	var tweets FetchTweetsResponse
 	if err := json.Unmarshal(bBytes, &tweets); err != nil {
 		return
 	}
 
-	for _, tweet := range tweets {
-		var parsedTweetTS int64 = 0
-		if parsedTweetTS >= filter.LatestTweetTS {
+	for indx, tweet := range tweets {
+		parsedTime, _ := time.Parse(time.RubyDate, tweet.CreatedAt)
+		unixTweetTime := parsedTime.Unix()
+		if unixTweetTime >= filter.LatestTweetTS {
 			parsedExtras := ParseExtras(tweet.FullText)
-
 			m.PingChannel <- MonitorPing{
 				Handle:  	tweet.User.ScreenName,
 				Message: 	tweet.FullText,
 				Image:   	tweet.User.ProfileImageURL,
+				URL: 		fmt.Sprintf("https://twitter.com/%s/status/%s", tweet.User.ScreenName, tweet.IDStr),
 				ParsedData: parsedExtras,
 			}
 		}
+		if indx == 0 {
+			filter.LatestTweetTS = unixTweetTime
+		}
+
 	}
 }
