@@ -16,7 +16,7 @@ type Handler struct {
 	*http.Client
 	PingChannel      chan MonitorPing
 	MonitorKillMap   map[int64]context.CancelFunc
-	CurrentMonitored []int64
+	CurrentMonitored []string
 
 	// Secrets
 	CSRFToken   string
@@ -52,7 +52,7 @@ func New(pingChan chan MonitorPing) *Handler {
 		Client:           &http.Client{},
 		PingChannel:      pingChan,
 		MonitorKillMap:   make(map[int64]context.CancelFunc),
-		CurrentMonitored: []int64{},
+		CurrentMonitored: []string{},
 		CSRFToken:        os.Getenv("CSRF_TOKEN"),
 		BearerToken:      os.Getenv("BEARER_TOKEN"),
 		AuthToken:        os.Getenv("AUTH_TOKEN"),
@@ -108,7 +108,7 @@ func ParseExtras(text string) []string {
 	return []string{}
 }
 
-func MonitorTweets(m *Handler, filter MonitorFilter) {
+func MonitorTweets(m *Handler, filter *MonitorFilter) {
 	req, _ := http.NewRequest("GET", fmt.Sprintf("https://api.twitter.com/1.1/statuses/user_timeline.json?count=5&include_rts=0&user_id=%d&tweet_mode=extended", filter.TwitterId), nil)
 	req.Header = http.Header{
 		"sec-ch-ua":                 {`"Chromium";v="112", "Google Chrome";v="112", "Not:A-Brand";v="99"'`},
@@ -144,10 +144,11 @@ func MonitorTweets(m *Handler, filter MonitorFilter) {
 		return
 	}
 
-	for indx, tweet := range tweets {
+	for _, tweet := range tweets {
 		parsedTime, _ := time.Parse(time.RubyDate, tweet.CreatedAt)
 		unixTweetTime := parsedTime.Unix()
-		if unixTweetTime >= filter.LatestTweetTS {
+		if unixTweetTime > filter.LatestTweetTS {
+			filter.LatestTweetTS = unixTweetTime
 			parsedExtras := ParseExtras(tweet.FullText)
 			m.PingChannel <- MonitorPing{
 				Handle:  	tweet.User.ScreenName,
@@ -157,9 +158,5 @@ func MonitorTweets(m *Handler, filter MonitorFilter) {
 				ParsedData: parsedExtras,
 			}
 		}
-		if indx == 0 {
-			filter.LatestTweetTS = unixTweetTime
-		}
-
 	}
 }

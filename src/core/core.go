@@ -7,33 +7,28 @@ import (
 	"os"
 	"strings"
 	"time"
-	"github.com/gtuk/discordwebhook"
+
 	"github.com/bwmarrin/discordgo"
-	"github.com/disgoorg/disgo/webhook"
+	"github.com/gtuk/discordwebhook"
 	"github.com/rayzub/twitter-monitor/src/twitter"
+	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
 )
 
 type Handler struct {
 	Context 			context.Context
 	Monitor 			*twitter.Handler
-	WHookClient 		webhook.Client
 	BotClient  		 	*discordgo.Session
+	Logger 				*zap.Logger
 	PingChan    		chan twitter.MonitorPing
 
 	RequestChannelId 	string
 }
 
 
-func New(ctx context.Context) error {
+func New(ctx context.Context, logger *zap.Logger) error {
 	pingChan := make(chan twitter.MonitorPing)
 	monitor := twitter.New(pingChan)
-	wClient, err := webhook.NewWithURL(os.Getenv("WEBHOOK"))
-
-	if err != nil {
-		return fmt.Errorf("error creating webhook: %s", err.Error())
-	}
-
 	bClient, err := discordgo.New(fmt.Sprintf("Bot %s", os.Getenv("BOT_TOKEN")))
 
 	if err != nil {
@@ -43,7 +38,7 @@ func New(ctx context.Context) error {
 	handler := &Handler{
 		Context:     		ctx,
 		Monitor:     		monitor,
-		WHookClient: 		wClient,
+		Logger:             logger,
 		BotClient:   		bClient,
 		PingChan:    		pingChan,
 		RequestChannelId:   os.Getenv("REQUEST_CHANNEL_ID"),
@@ -54,7 +49,7 @@ func New(ctx context.Context) error {
 	if err := handler.BotClient.Open(); err != nil {
 		return fmt.Errorf("error opening bot websocket: %s", err.Error())
 	}
-	log.Printf("Bot %s currently online. Press CTRL-C to exit.", handler.BotClient.State.User.Username)
+	handler.Logger.Info(fmt.Sprintf("Bot %s currently online. Press CTRL-C to exit.", handler.BotClient.State.User.Username))
 
 	go func() {
 		for {
@@ -63,6 +58,7 @@ func New(ctx context.Context) error {
 				return
 			default:
 				ping := <-handler.PingChan
+				log.Println(ping)
 				if err := handler.SendWebhook(ping); err != nil {
 					continue
 				}
@@ -122,11 +118,11 @@ func (h *Handler) HandleCommands(discord *discordgo.Session, message *discordgo.
 		}
 		twitterHandle := strings.ToLower(messageParts[1])
 		if err := h.addTwitterAccount(twitterHandle); err != nil {
-			log.Println(err.Error())
+			h.Logger.Error(err.Error())
 			return
 		}
 
-		log.Printf("Added %s to monitor list.", twitterHandle)
+		h.Logger.Info(fmt.Sprintf("Added %s to monitor list.", twitterHandle))
 		h.BotClient.ChannelMessageSend(message.ChannelID, fmt.Sprintf("Added %s to monitor list.", twitterHandle))
 		return
 	case ".remove":
@@ -139,10 +135,14 @@ func (h *Handler) HandleCommands(discord *discordgo.Session, message *discordgo.
 			return
 		}
 
-		log.Printf("Removed %s from monitor list.", twitterHandle)
+		h.Logger.Info(fmt.Sprintf("Removed %s from monitor list.", twitterHandle))
 		h.BotClient.ChannelMessageSend(message.ChannelID, fmt.Sprintf("Removed %s from monitor list.", twitterHandle))
 		return
-	case ".list":	
+	case ".list":
+		h.BotClient.ChannelMessageSendEmbed(message.ChannelID, &discordgo.MessageEmbed{
+			Title: "Current Monitored Twitters",
+			Description: strings.Join(h.Monitor.CurrentMonitored, "\n"),
+		})	
 		return			
 	}
 }
@@ -157,22 +157,24 @@ func (h *Handler) addTwitterAccount(handle string) error {
 
 	ctx, cancel := context.WithCancel(h.Context)
 	go func(){
+		twitterFilter := &twitter.MonitorFilter{
+			PositiveKeywords: []string{},
+			NegativeKeywords: []string{},
+			TwitterId: accountId,
+			LatestTweetTS: time.Now().Unix(),
+		}
+
 		for {
 			select {
 			case <-ctx.Done():
 				return
 
 			default:
-				twitter.MonitorTweets(h.Monitor, twitter.MonitorFilter{
-					PositiveKeywords: []string{},
-					NegativeKeywords: []string{},
-					TwitterId: accountId,
-					LatestTweetTS: time.Now().Unix(),
-				})
+				twitter.MonitorTweets(h.Monitor, twitterFilter)
 			}
 		}
 	}()
-	h.Monitor.CurrentMonitored = append(h.Monitor.CurrentMonitored, accountId)
+	h.Monitor.CurrentMonitored = append(h.Monitor.CurrentMonitored, handle)
 	h.Monitor.MonitorKillMap[accountId] = cancel
 	return nil
 }
@@ -192,12 +194,8 @@ func (h *Handler) removeTwitterAccount(handle string) error {
 
 	cancel()
 	delete(h.Monitor.MonitorKillMap, accountId)
-	accountIdIndx := slices.Index(h.Monitor.CurrentMonitored, accountId)
+	accountIdIndx := slices.Index(h.Monitor.CurrentMonitored, handle)
 	h.Monitor.CurrentMonitored = slices.Delete(h.Monitor.CurrentMonitored, accountIdIndx, accountIdIndx+1)
 	return nil
 }
 
-func (h *Handler) listMonitored() error {
-	// return embed of accounts monitored
-	return nil
-}

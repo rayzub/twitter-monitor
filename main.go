@@ -10,20 +10,30 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/rayzub/twitter-monitor/src/core"
+	"go.uber.org/zap"
+
 )
 
-// @todo: add logging!
 func main() {
 	sc := make(chan os.Signal, 1)
 	isDev := flag.Bool("dev", false, "run monitor with dev environment values")
 	flag.Parse()
 
 
+	var logger *zap.Logger
+	if *isDev {
+		logger, _ = zap.NewDevelopment()
+	} else {
+		logger, _ = zap.NewProduction()
+	}
+
 	if err := LoadAndValidateEnv(*isDev); err != nil {
 		panic(err)
 	}
+
+
 	ctx := context.Background()
-	if err := core.New(ctx); err != nil {
+	if err := core.New(ctx, logger); err != nil {
 		panic(err)
 	}
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
