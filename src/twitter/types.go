@@ -93,6 +93,20 @@ type FetchTweetsResponse []struct {
 			Indices    []int  `json:"indices"`
 		} `json:"user_mentions"`
 		Urls []any `json:"urls"`
+		Media []struct {
+			ID            int64  `json:"id,omitempty"`
+			IDStr         string `json:"id_str,omitempty"`
+			Indices       []int  `json:"indices,omitempty"`
+			MediaURL      string `json:"media_url,omitempty"`
+			MediaURLHTTPS string `json:"media_url_https,omitempty"`
+			URL           string `json:"url,omitempty"`
+			DisplayURL    string `json:"display_url,omitempty"`
+			ExpandedURL   string `json:"expanded_url,omitempty"`
+			Type          string `json:"type,omitempty"`
+			OriginalInfo  any `json:"original_info,omitempty"`
+			Sizes any `json:"sizes,omitempty"`
+			Features any `json:"features,omitempty"`
+		} `json:"media,omitempty"`
 	} `json:"entities"`
 	Source               string `json:"source"`
 	InReplyToStatusID    int64  `json:"in_reply_to_status_id"`

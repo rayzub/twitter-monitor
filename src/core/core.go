@@ -57,7 +57,6 @@ func New(ctx context.Context, logger *zap.Logger) error {
 				return
 			default:
 				ping := <-handler.PingChan
-				log.Println(ping)
 				if err := handler.SendWebhook(ping); err != nil {
 					continue
 				}
@@ -76,6 +75,7 @@ func (h *Handler) SendWebhook(ping twitter.MonitorPing) error {
 	linkTitles := "Links"
 	linkMessage := fmt.Sprintf("[Twitter Link](%s)", ping.URL)
 	footerText := "Made by xyz#0004"
+	inline := true
 	message := discordwebhook.Message{
 		Username: &username,
 		Embeds: &[]discordwebhook.Embed{
@@ -102,6 +102,25 @@ func (h *Handler) SendWebhook(ping twitter.MonitorPing) error {
 			},
 		},
 	}
+
+	if ping.MessageImage != "" {
+		embed := *message.Embeds
+		embed[0].Image = &discordwebhook.Image{
+			Url: &ping.MessageImage,
+		}
+	}
+
+	if len(ping.ParsedData) > 0 {
+		embed := *message.Embeds
+		for _, extraData := range ping.ParsedData {
+			*embed[0].Fields = append(*embed[0].Fields, discordwebhook.Field{
+				Name: &extraData.Title,
+				Value: &extraData.Value,
+				Inline: &inline,
+			})
+		}
+	}
+
 	if err := discordwebhook.SendMessage(os.Getenv("WEBHOOK"), message); err != nil {
 		return err
 	}

@@ -35,9 +35,13 @@ type MonitorPing struct {
 	Handle     string
 	Title 	   string
 	Message    string
+	MessageImage string
 	Image      string
 	URL        string
-	ParsedData []string // URLSs, public keys, etc!
+	ParsedData []struct{
+		Title 	string
+		Value 	string
+	} // URLSs, public keys, etc!
 }
 
 var (
@@ -104,8 +108,8 @@ func (m *Handler) FetchTwitterID(twitterHandle string) int64 {
 	return restId
 }
 
-func ParseExtras(text string) []string {
-	return []string{}
+func ParseExtras(text string) []struct{ Title string; Value string; } {
+	return []struct{Title string; Value string}{}
 }
 
 func MonitorTweets(m *Handler, filter *MonitorFilter) {
@@ -150,9 +154,15 @@ func MonitorTweets(m *Handler, filter *MonitorFilter) {
 		if unixTweetTime > filter.LatestTweetTS {
 			filter.LatestTweetTS = unixTweetTime
 			parsedExtras := ParseExtras(tweet.FullText)
+			imageURL := ""
+			if len(tweet.Entities.Media) > 0 {
+				mainEntity := tweet.Entities.Media[0]
+				imageURL = mainEntity.MediaURLHTTPS					
+			}
 			m.PingChannel <- MonitorPing{
 				Handle:  	tweet.User.ScreenName,
 				Message: 	tweet.FullText,
+				MessageImage: imageURL,
 				Image:   	tweet.User.ProfileImageURL,
 				URL: 		fmt.Sprintf("https://twitter.com/%s/status/%s", tweet.User.ScreenName, tweet.IDStr),
 				ParsedData: parsedExtras,
