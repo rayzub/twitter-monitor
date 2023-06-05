@@ -50,7 +50,6 @@ func New(ctx context.Context, logger *zap.Logger) error {
 		return fmt.Errorf("error opening bot websocket: %s", err.Error())
 	}
 	handler.Logger.Info(fmt.Sprintf("Bot %s currently online. Press CTRL-C to exit.", handler.BotClient.State.User.Username))
-
 	go func() {
 		for {
 			select {
@@ -72,13 +71,16 @@ func New(ctx context.Context, logger *zap.Logger) error {
 func (h *Handler) SendWebhook(ping twitter.MonitorPing) error {
 	username := "PRINT Twitter Monitor"
 	twitterURL := fmt.Sprintf("https://twitter.com/%s", ping.Handle)
+	title := fmt.Sprintf("New Tweet - %s", ping.Handle)
 	fieldTitle := "Detected Tweet"
+	linkTitles := "Links"
+	linkMessage := fmt.Sprintf("[Twitter Link](%s)", ping.URL)
+	footerText := "Made by xyz#0004"
 	message := discordwebhook.Message{
 		Username: &username,
 		Embeds: &[]discordwebhook.Embed{
 			{
-				Title:  nil,
-				Url:   	&ping.URL,
+				Title:  &title,
 				Author: &discordwebhook.Author{
 					Name: &ping.Handle,
 					IconUrl: &ping.Image,
@@ -89,6 +91,13 @@ func (h *Handler) SendWebhook(ping twitter.MonitorPing) error {
 						Name:  &fieldTitle,
 						Value: &ping.Message,
 					},
+					{
+						Name: &linkTitles,
+						Value: &linkMessage,
+					},
+				},
+				Footer: &discordwebhook.Footer{
+					Text: &footerText,
 				},
 			},
 		},
@@ -117,6 +126,11 @@ func (h *Handler) HandleCommands(discord *discordgo.Session, message *discordgo.
 			return
 		}
 		twitterHandle := strings.ToLower(messageParts[1])
+		if strings.HasPrefix(twitterHandle, "https://") {
+			splitTwitterURL := strings.Split(twitterHandle, "https://twitter.com/")
+			twitterHandle = splitTwitterURL[1]
+		}
+
 		if err := h.addTwitterAccount(twitterHandle); err != nil {
 			h.Logger.Error(err.Error())
 			return
