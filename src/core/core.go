@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -144,32 +143,37 @@ func (h *Handler) HandleCommands(discord *discordgo.Session, message *discordgo.
 		if len(messageParts) < 2 {
 			return
 		}
-		twitterHandle := strings.ToLower(messageParts[1])
-		if strings.HasPrefix(twitterHandle, "https://") {
-			splitTwitterURL := strings.Split(twitterHandle, "https://twitter.com/")
-			twitterHandle = splitTwitterURL[1]
-		}
 
-		if err := h.addTwitterAccount(twitterHandle); err != nil {
-			h.Logger.Error(err.Error())
-			return
+		twitterHandles := strings.Split(strings.ToLower(messageParts[1]), ",")
+		for _, twitterHandle := range twitterHandles {
+			if strings.HasPrefix(twitterHandle, "https://") {
+				splitTwitterURL := strings.Split(twitterHandle, "https://twitter.com/")
+				twitterHandle = splitTwitterURL[1]
+			}
+	
+			if err := h.addTwitterAccount(twitterHandle); err != nil {
+				h.Logger.Error(err.Error())
+				return
+			}
+	
+			h.Logger.Info(fmt.Sprintf("Added %s to monitor list.", twitterHandle))
+			h.BotClient.ChannelMessageSend(message.ChannelID, fmt.Sprintf("Added %s to monitor list.", twitterHandle))
 		}
-
-		h.Logger.Info(fmt.Sprintf("Added %s to monitor list.", twitterHandle))
-		h.BotClient.ChannelMessageSend(message.ChannelID, fmt.Sprintf("Added %s to monitor list.", twitterHandle))
 		return
 	case ".remove":
 		if len(messageParts) < 2 {
 			return
 		}
 
-		twitterHandle := strings.ToLower(messageParts[1])
-		if err := h.removeTwitterAccount(twitterHandle); err != nil {
-			return
-		}
+		twitterHandles := strings.Split(strings.ToLower(messageParts[1]), ",")		
+		for _, twitterHandle := range twitterHandles {
+			if err := h.removeTwitterAccount(twitterHandle); err != nil {
+				return
+			}
 
-		h.Logger.Info(fmt.Sprintf("Removed %s from monitor list.", twitterHandle))
-		h.BotClient.ChannelMessageSend(message.ChannelID, fmt.Sprintf("Removed %s from monitor list.", twitterHandle))
+			h.Logger.Info(fmt.Sprintf("Removed %s from monitor list.", twitterHandle))
+			h.BotClient.ChannelMessageSend(message.ChannelID, fmt.Sprintf("Removed %s from monitor list.", twitterHandle))
+		}
 		return
 	case ".list":
 		h.BotClient.ChannelMessageSendEmbed(message.ChannelID, &discordgo.MessageEmbed{
